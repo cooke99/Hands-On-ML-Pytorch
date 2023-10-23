@@ -1,32 +1,35 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
-from torch.optim import SGD
+from torch.utils.data import TensorDataset
+from torch.optim import SGD, Adam
 import numpy as np
 
 class GRU(nn.Module):
-    def __init__(self, n_feats: int = 1, n_hidden: int = 8, n_layers: int = 1, 
+    def __init__(self, n_feats: int = 1, n_hidden: int = 1, n_layers: int = 1, 
                  batch_first: bool = True, dropout: float = 0.0, 
-                 bidir: bool = False):
+                 bidir: bool = False, n_outputs: int = 1):
         super().__init__()
         self.gru_layer = nn.GRU(input_size = n_feats, hidden_size = n_hidden,
                                 num_layers = n_layers, batch_first = batch_first,
                                 dropout = dropout, bidirectional = bidir)
+        self.linear = nn.Linear(n_hidden, n_outputs)
         
     def forward(self, X):
-        return self.gru_layer(X)
+        _, h_n = self.gru_layer(X)
+        return self.linear(h_n)
     
     def predict(self, X):
         self.eval()
         with torch.no_grad():
-            return self.gru_layer(X)
+            _, h_n = self.gru_layer(X)
+            return self.linear(h_n)
     
-    def fit(self, train_dataset: Dataset, val_dataset: Dataset, batch_size: int = 64, 
+    def fit(self, train_dataset: TensorDataset, val_dataset: TensorDataset, batch_size: int = 64, 
             learning_rate: float = 1e-3, num_epochs: int = 100, device: str = 'cpu'):
         
         loss_fn = nn.MSELoss()
-        optimizer = SGD(self.parameters(), lr = learning_rate)
+        optimizer = Adam(self.parameters(), lr = learning_rate)
         
         train_dataloader = DataLoader(train_dataset, batch_size = batch_size,
                                       shuffle = True)
@@ -46,6 +49,8 @@ class GRU(nn.Module):
         for batch_idx, (X, y) in enumerate(train_dataloader):
             X, y = X.to(device), y.to(device)
             preds = self(X)
+            preds = torch.squeeze(preds)[-1,:]
+            y = torch.squeeze(y)
             loss = loss_fn(preds, y)
             
             loss.backward()
@@ -63,10 +68,12 @@ class GRU(nn.Module):
             for batch_idx, (X, y) in enumerate(val_dataloader):
                 X, y = X.to(device), y.to(device)
                 preds = self(X)
+                preds = torch.squeeze(preds)[-1,:]
+                y = torch.squeeze(y)
                 loss = loss_fn(preds, y)
                 val_loss += loss.item()
-                sq_err += (preds - y)**2
+                sq_err += torch.sum((preds - y)**2).item()
         
-        rmse = torch.sqrt(sq_err/len(val_dataloader.dataset))
+        rmse = np.sqrt(sq_err/len(val_dataloader.dataset))
         
         return val_loss, rmse
