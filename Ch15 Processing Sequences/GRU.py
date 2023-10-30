@@ -10,6 +10,7 @@ class GRU(nn.Module):
                  batch_first: bool = True, dropout: float = 0.0, 
                  bidir: bool = False, n_outputs: int = 1):
         super().__init__()
+        self.n_gru_layers = n_layers
         self.gru_layer = nn.GRU(input_size = n_feats, hidden_size = n_hidden,
                                 num_layers = n_layers, batch_first = batch_first,
                                 dropout = dropout, bidirectional = bidir)
@@ -23,7 +24,10 @@ class GRU(nn.Module):
         self.eval()
         with torch.no_grad():
             _, h_n = self.gru_layer(X)
-            return self.linear(h_n)
+            if (self.n_gru_layers > 1):
+                return torch.squeeze(self.linear(h_n)[-1,:,:])
+            else:
+                return torch.squeeze(self.linear(h_n))
     
     def fit(self, train_dataset: TensorDataset, val_dataset: TensorDataset, batch_size: int = 64, 
             learning_rate: float = 1e-3, num_epochs: int = 100, device: str = 'cpu'):
@@ -49,7 +53,10 @@ class GRU(nn.Module):
         for batch_idx, (X, y) in enumerate(train_dataloader):
             X, y = X.to(device), y.to(device)
             preds = self(X)
-            preds = torch.squeeze(preds)[-1,:]
+            if (self.n_gru_layers > 1):
+                preds = preds[-1,:,:]
+                
+            preds = torch.squeeze(preds)
             y = torch.squeeze(y)
             loss = loss_fn(preds, y)
             
@@ -68,7 +75,10 @@ class GRU(nn.Module):
             for batch_idx, (X, y) in enumerate(val_dataloader):
                 X, y = X.to(device), y.to(device)
                 preds = self(X)
-                preds = torch.squeeze(preds)[-1,:]
+                if (self.n_gru_layers > 1):
+                    preds = preds[-1,:,:]
+                    
+                preds = torch.squeeze(preds)
                 y = torch.squeeze(y)
                 loss = loss_fn(preds, y)
                 val_loss += loss.item()
